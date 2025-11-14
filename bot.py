@@ -1,139 +1,101 @@
 import requests
-import matplotlib.pyplot as plt
-import datetime
 import time
-import os
+import datetime
 
-class TradingBot:
-    def __init__(self):
-        self.symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT']
-        # ⚠️ ЗАМЕНИТЕ НА ВАШИ ДАННЫЕ!
-        self.telegram_token = "8537987175:AAEXsTlBnv-f5troBotT_VdLuFs8F1cQFrk"
-        self.chat_id = "5819638872"
-        
-    def get_price(self, symbol):
-        try:
-            url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}"
-            response = requests.get(url)
-            data = response.json()
-            return {
-                'symbol': symbol,
-                'price': float(data['lastPrice']),
-                'change': float(data['priceChangePercent']),
-                'high': float(data['highPrice']),
-                'low': float(data['lowPrice'])
-            }
-        except Exception as e:
-            print(f"Ошибка: {e}")
-            return None
+print("🤖 ТОРГОВЫЙ БОТ ЗАПУЩЕН!")
+print("📊 Начинаю анализ...")
+
+# ⚠️ ЗАМЕНИТЕ ЭТИ ДАННЫЕ НА СВОИ!
+TELEGRAM_TOKEN = "8537987175:AAHyuwgO_SJdrzL5pyjc11EfFjfHKrOC5-0"
+CHAT_ID = "5819638872"
+
+def get_crypto_price(symbol):
+    """Получаем цену криптовалюты"""
+    try:
+        url = f"https://api.binance.com/api/v3/ticker/24hr?symbol={symbol}"
+        response = requests.get(url)
+        data = response.json()
+        return {
+            'symbol': symbol,
+            'price': float(data['lastPrice']),
+            'change': float(data['priceChangePercent'])
+        }
+    except:
+        return None
+
+def send_telegram_message(message):
+    """Отправляем сообщение в Telegram"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = {
+            'chat_id': CHAT_ID,
+            'text': message,
+            'parse_mode': 'HTML'
+        }
+        response = requests.post(url, data=data)
+        return response.status_code == 200
+    except Exception as e:
+        print(f"Ошибка отправки: {e}")
+        return False
+
+def analyze_market():
+    """Анализируем рынок и отправляем сигнал"""
+    # ⚠️ ВАЖНО: правильные символы!
+    symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT']
     
-    def analyze(self, price_data):
-        if not price_data:
-            return "HOLD", 0, ["Ошибка данных"]
+    for symbol in symbols:
+        print(f"🔍 Проверяю {symbol}...")
+        
+        # Получаем данные
+        data = get_crypto_price(symbol)
+        
+        if data:
+            price = data['price']
+            change = data['change']
             
-        signals = []
-        reasons = []
-        
-        if price_data['change'] > 2:
-            signals.append('BUY')
-            reasons.append(f"📈 Цена +{price_data['change']:.2f}%")
-        elif price_data['change'] < -2:
-            signals.append('SELL') 
-            reasons.append(f"📉 Цена {price_data['change']:.2f}%")
-            
-        buy_count = signals.count('BUY')
-        sell_count = signals.count('SELL')
-        
-        if buy_count > sell_count:
-            return 'BUY', 70, reasons
-        elif sell_count > buy_count:
-            return 'SELL', 70, reasons
-        else:
-            return 'HOLD', 0, ["Нет сигналов"]
-    
-    def create_chart(self, symbol, price_data, signal, confidence, reasons):
-        plt.figure(figsize=(10, 6))
-        plt.style.use('dark_background')
-        
-        prices = [price_data['low'], price_data['price'], price_data['high']]
-        labels = ['Min', 'Current', 'Max']
-        colors = ['red', 'yellow', 'green']
-        
-        plt.bar(labels, prices, color=colors, alpha=0.7)
-        plt.title(f'Сигнал: {symbol} - {signal}', fontsize=16, color='white')
-        plt.ylabel('Цена ($)')
-        
-        info_text = f"Цена: ${price_data['price']:.2f}\nИзменение: {price_data['change']:.2f}%"
-        plt.figtext(0.15, 0.02, info_text, fontsize=10, color='lightblue')
-        
-        if not os.path.exists('charts'):
-            os.makedirs('charts')
-            
-        filename = f"charts/signal_{symbol}.png"
-        plt.savefig(filename, bbox_inches='tight')
-        plt.close()
-        
-        return filename
-    
-    def send_telegram_message(self, message, image_path=None):
-        try:
-            if image_path and os.path.exists(image_path):
-                url = f"https://api.telegram.org/bot{self.telegram_token}/sendPhoto"
-                with open(image_path, 'rb') as photo:
-                    files = {'photo': photo}
-                    data = {'chat_id': self.chat_id, 'caption': message}
-                    response = requests.post(url, files=files, data=data)
+            # Простой анализ
+            if change > 1.5:
+                signal = "🟢 ПОКУПАТЬ"
+                reason = f"Цена выросла на {change:.2f}%"
+            elif change < -1.5:
+                signal = "🔴 ПРОДАВАТЬ" 
+                reason = f"Цена упала на {abs(change):.2f}%"
             else:
-                url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
-                data = {'chat_id': self.chat_id, 'text': message}
-                response = requests.post(url, data=data)
+                signal = "🟡 ЖДАТЬ"
+                reason = f"Изменение {change:.2f}% - нет четкого сигнала"
             
-            return True
-        except Exception as e:
-            print(f"Ошибка Telegram: {e}")
-            return False
-    
-    def run_once(self):
-        print("🚀 Запускаю анализ...")
-        
-        for symbol in self.symbols:
-            print(f"🔍 Проверяю {symbol}...")
-            
-            price_data = self.get_price(symbol)
-            
-            if price_data:
-                signal, confidence, reasons = self.analyze(price_data)
+            # Если есть сигнал - отправляем
+            if signal != "🟡 ЖДАТЬ":
+                # Формируем сообщение
+                message = f"""
+🎯 <b>ТОРГОВЫЙ СИГНАЛ</b>
+
+💰 <b>Пара:</b> {symbol}
+📊 <b>Сигнал:</b> {signal}
+💵 <b>Цена:</b> ${price:.2f}
+📈 <b>Изменение:</b> {change:.2f}%
+
+📋 <b>Причина:</b> {reason}
+
+⏰ <b>Время:</b> {datetime.datetime.now().strftime('%H:%M:%S')}
+
+⚠️ <i>Это тестовый сигнал!</i>
+                """
                 
-                if signal != 'HOLD':
-                    print(f"🎯 Сигнал {signal} для {symbol}!")
-                    
-                    # Создаем график
-                    chart_path = self.create_chart(symbol, price_data, signal, confidence, reasons)
-                    
-                    # Формируем сообщение
-                    message = f"""
-🎯 СИГНАЛ: {signal}
-💰 Пара: {symbol}
-💵 Цена: ${price_data['price']:.2f}
-📊 Изменение: {price_data['change']:.2f}%
-
-📋 Причины:
-{chr(10).join(reasons)}
-
-⏰ Время: {datetime.datetime.now().strftime('%H:%M')}
-                    """
-                    
-                    # Отправляем в Telegram
-                    if self.send_telegram_message(message, chart_path):
-                        print(f"✅ Отправлено в Telegram!")
-                    else:
-                        print(f"❌ Ошибка отправки")
+                # Отправляем в Telegram
+                if send_telegram_message(message):
+                    print(f"✅ Сигнал {signal} для {symbol}!")
+                    print(f"✅ Отправлено в Telegram!")
                 else:
-                    print(f"➖ Нет сигнала")
-            
-            time.sleep(1)
+                    print(f"❌ Ошибка отправки для {symbol}")
+            else:
+                print(f"➖ Нет сигнала")
+        else:
+            print(f"❌ Не удалось получить данные для {symbol}")
+        
+        # Ждем 2 секунды между запросами
+        time.sleep(2)
 
-# Запуск
-if __name__ == "__main__":
-    bot = TradingBot()
-    bot.run_once()
+# Запускаем анализ
+analyze_market()
+print("🎉 Анализ завершен!")
