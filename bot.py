@@ -4,9 +4,12 @@ import datetime
 import time
 import os
 
-class SimpleTradingBot:
+class TradingBot:
     def __init__(self):
         self.symbols = ['BTCUSDT', 'ETHUSDT', 'ADAUSDT']
+        # ⚠️ ЗАМЕНИТЕ НА ВАШИ ДАННЫЕ!
+        self.telegram_token = "8537987175:AAEXsTlBnv-f5troBotT_VdLuFs8F1cQFrk"
+        self.chat_id = "5819638872"
         
     def get_price(self, symbol):
         try:
@@ -20,115 +23,117 @@ class SimpleTradingBot:
                 'high': float(data['highPrice']),
                 'low': float(data['lowPrice'])
             }
-        except:
+        except Exception as e:
+            print(f"Ошибка: {e}")
             return None
     
     def analyze(self, price_data):
         if not price_data:
-            return "HOLD", 0, ["Ошибка получения данных"]
+            return "HOLD", 0, ["Ошибка данных"]
             
         signals = []
         reasons = []
         
-        # Анализ изменения цены
-        if price_data['change'] > 3:
+        if price_data['change'] > 2:
             signals.append('BUY')
-            reasons.append(f"Цена выросла на {price_data['change']:.2f}%")
-        elif price_data['change'] < -3:
+            reasons.append(f"📈 Цена +{price_data['change']:.2f}%")
+        elif price_data['change'] < -2:
             signals.append('SELL') 
-            reasons.append(f"Цена упала на {abs(price_data['change']):.2f}%")
+            reasons.append(f"📉 Цена {price_data['change']:.2f}%")
             
-        # Анализ волатильности
-        volatility = (price_data['high'] - price_data['low']) / price_data['price'] * 100
-        if volatility > 5:
-            reasons.append(f"Высокая волатильность: {volatility:.1f}%")
-            
-        # Определяем сигнал
         buy_count = signals.count('BUY')
         sell_count = signals.count('SELL')
         
         if buy_count > sell_count:
-            return 'BUY', min(80, buy_count * 40), reasons
+            return 'BUY', 70, reasons
         elif sell_count > buy_count:
-            return 'SELL', min(80, sell_count * 40), reasons
+            return 'SELL', 70, reasons
         else:
-            return 'HOLD', 0, reasons or ["Нет четких сигналов"]
+            return 'HOLD', 0, ["Нет сигналов"]
     
     def create_chart(self, symbol, price_data, signal, confidence, reasons):
-        if not os.path.exists('charts'):
-            os.makedirs('charts')
-            
         plt.figure(figsize=(10, 6))
         plt.style.use('dark_background')
         
-        # Создаем простой график
         prices = [price_data['low'], price_data['price'], price_data['high']]
         labels = ['Min', 'Current', 'Max']
         colors = ['red', 'yellow', 'green']
         
         plt.bar(labels, prices, color=colors, alpha=0.7)
-        plt.title(f'Торговый сигнал: {symbol} - {signal}', fontsize=16, fontweight='bold', color='white')
-        plt.ylabel('Цена (USD)', fontsize=12)
-        plt.grid(True, alpha=0.3)
+        plt.title(f'Сигнал: {symbol} - {signal}', fontsize=16, color='white')
+        plt.ylabel('Цена ($)')
         
-        # Добавляем информацию
-        info_text = f"Цена: ${price_data['price']:.2f}\n"
-        info_text += f"Изменение: {price_data['change']:.2f}%\n"
-        info_text += f"Уверенность: {confidence}%\n"
-        info_text += "Причины:\n" + "\n".join([f"• {r}" for r in reasons])
+        info_text = f"Цена: ${price_data['price']:.2f}\nИзменение: {price_data['change']:.2f}%"
+        plt.figtext(0.15, 0.02, info_text, fontsize=10, color='lightblue')
         
-        plt.figtext(0.02, 0.02, info_text, fontsize=10, color='lightblue',
-                   bbox=dict(boxstyle="round,pad=0.5", facecolor="darkblue", alpha=0.7))
-        
-        filename = f"charts/signal_{symbol}_{int(time.time())}.png"
-        plt.savefig(filename, dpi=100, bbox_inches='tight')
+        if not os.path.exists('charts'):
+            os.makedirs('charts')
+            
+        filename = f"charts/signal_{symbol}.png"
+        plt.savefig(filename, bbox_inches='tight')
         plt.close()
         
         return filename
     
-    def run(self):
-        print("🤖 Простой торговый бот запущен!")
-        print("📊 Анализирую рынок...\n")
+    def send_telegram_message(self, message, image_path=None):
+        try:
+            if image_path and os.path.exists(image_path):
+                url = f"https://api.telegram.org/bot{self.telegram_token}/sendPhoto"
+                with open(image_path, 'rb') as photo:
+                    files = {'photo': photo}
+                    data = {'chat_id': self.chat_id, 'caption': message}
+                    response = requests.post(url, files=files, data=data)
+            else:
+                url = f"https://api.telegram.org/bot{self.telegram_token}/sendMessage"
+                data = {'chat_id': self.chat_id, 'text': message}
+                response = requests.post(url, data=data)
+            
+            return True
+        except Exception as e:
+            print(f"Ошибка Telegram: {e}")
+            return False
+    
+    def run_once(self):
+        print("🚀 Запускаю анализ...")
         
         for symbol in self.symbols:
-            print(f"🔍 Анализирую {symbol}...")
+            print(f"🔍 Проверяю {symbol}...")
             
-            # Получаем данные
             price_data = self.get_price(symbol)
             
             if price_data:
-                # Анализируем
                 signal, confidence, reasons = self.analyze(price_data)
                 
                 if signal != 'HOLD':
-                    print(f"🎯 СИГНАЛ: {signal} {symbol}!")
-                    print(f"💪 Уверенность: {confidence}%")
-                    print(f"💰 Цена: ${price_data['price']:.2f}")
-                    print("📋 Причины:")
-                    for reason in reasons:
-                        print(f"   • {reason}")
+                    print(f"🎯 Сигнал {signal} для {symbol}!")
                     
                     # Создаем график
                     chart_path = self.create_chart(symbol, price_data, signal, confidence, reasons)
-                    print(f"📊 График сохранен: {chart_path}")
                     
-                    # Рассчитываем цели
-                    if signal == 'BUY':
-                        tp = price_data['price'] * 1.03
-                        sl = price_data['price'] * 0.98
-                    else:
-                        tp = price_data['price'] * 0.97
-                        sl = price_data['price'] * 1.02
-                        
-                    print(f"🎯 Take Profit: ${tp:.2f}")
-                    print(f"🛡️ Stop Loss: ${sl:.2f}")
-                else:
-                    print(f"➖ Нет сигнала для {symbol}")
-                    
-            print("-" * 50)
-            time.sleep(1)  # Пауза между запросами
+                    # Формируем сообщение
+                    message = f"""
+🎯 СИГНАЛ: {signal}
+💰 Пара: {symbol}
+💵 Цена: ${price_data['price']:.2f}
+📊 Изменение: {price_data['change']:.2f}%
 
-# Запускаем бота
+📋 Причины:
+{chr(10).join(reasons)}
+
+⏰ Время: {datetime.datetime.now().strftime('%H:%M')}
+                    """
+                    
+                    # Отправляем в Telegram
+                    if self.send_telegram_message(message, chart_path):
+                        print(f"✅ Отправлено в Telegram!")
+                    else:
+                        print(f"❌ Ошибка отправки")
+                else:
+                    print(f"➖ Нет сигнала")
+            
+            time.sleep(1)
+
+# Запуск
 if __name__ == "__main__":
-    bot = SimpleTradingBot()
-    bot.run()
+    bot = TradingBot()
+    bot.run_once()
